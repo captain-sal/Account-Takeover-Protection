@@ -1,0 +1,107 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+
+# Load the data
+data = pd.read_csv('key_press_data.csv')
+
+# Handle missing values by filling with the mean of the column
+data['Time Between Keys'].fillna(data['Time Between Keys'].mean(), inplace=True)
+
+# Encode the 'Key' column
+key_encoder = LabelEncoder()
+data['Key_encoded'] = key_encoder.fit_transform(data['Key'])
+
+# Feature selection and preprocessing
+X = data[['Duration', 'Time Between Keys', 'Typing Speed (KPS)', 'Key_encoded']].values
+y = data['User ID'].values
+
+# Encode the target variable as integers
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+
+# Standardize the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y_encoded, test_size=0.2, random_state=42)
+
+# Random Forest Classifier
+clf_rf = RandomForestClassifier(n_estimators=100, random_state=42)
+clf_rf.fit(X_train, y_train)
+
+# Predict on the test set
+y_pred_rf = clf_rf.predict(X_test)
+
+# Evaluate the Random Forest classifier
+print("Random Forest Classifier:")
+print(classification_report(y_test, y_pred_rf))
+print(f"Accuracy: {accuracy_score(y_test, y_pred_rf)}")
+print()
+
+# SVM Classifier
+clf_svm = SVC(probability=True, random_state=42)
+clf_svm.fit(X_train, y_train)
+
+# Predict on the test set
+y_pred_svm = clf_svm.predict(X_test)
+
+# Evaluate the SVM classifier
+print("SVM Classifier:")
+print(classification_report(y_test, y_pred_svm))
+print(f"Accuracy: {accuracy_score(y_test, y_pred_svm)}")
+print()
+
+clf_knn = KNeighborsClassifier(n_neighbors=5)
+clf_knn.fit(X_train, y_train)
+
+model_nn = Sequential([
+    Dense(64, activation='relu', input_shape=(X_train.shape[1],)),
+    Dropout(0.2),
+    Dense(32, activation='relu'),
+    Dropout(0.2),
+    Dense(len(label_encoder.classes_), activation='softmax')
+])
+model_nn.compile(optimizer='adam',
+                 loss='sparse_categorical_crossentropy',
+                 metrics=['accuracy'])
+history = model_nn.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test),
+                       callbacks=[EarlyStopping(patience=5, restore_best_weights=True)])
+
+
+new_data = np.array([[1.2, 0.5, 10.0, key_encoder.transform(['a'])[0]]])  # Adjust the key as needed
+new_data_scaled = scaler.transform(new_data)
+
+pred_rf = clf_rf.predict(new_data_scaled)
+pred_svm = clf_svm.predict(new_data_scaled)
+pred_knn = clf_knn.predict(new_data_scaled)
+pred_nn = model_nn.predict(new_data_scaled)
+
+pred_rf_label = label_encoder.inverse_transform(pred_rf)[0]
+pred_svm_label = label_encoder.inverse_transform(pred_svm)[0]
+pred_knn_label = label_encoder.inverse_transform(pred_knn)[0]
+pred_nn_label = label_encoder.inverse_transform([np.argmax(pred_nn)])[0]
+
+# Expected user ID
+expected_user_id = 'User123'  # Replace with the actual expected user ID
+
+# Determine anomaly status for each model
+anomaly_rf = pred_rf_label != expected_user_id
+anomaly_svm = pred_svm_label != expected_user_id
+anomaly_knn = pred_knn_label != expected_user_id
+anomaly_nn = pred_nn_label != expected_user_id
+
+# Print results
+print(f"Random Forest Prediction: {pred_rf_label}, Anomaly: {anomaly_rf}")
+print(f"SVM Prediction: {pred_svm_label}, Anomaly: {anomaly_svm}")
+print(f"KNN Prediction: {pred_knn_label}, Anomaly: {anomaly_knn}")
+print(f"Neural Network Prediction: {pred_nn_label}, Anomaly: {anomaly_nn}")
